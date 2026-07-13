@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>예약하기</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{background:#F8F9FE;font-family:Inter,'Pretendard Variable',Pretendard,-apple-system,'Malgun Gothic',system-ui,sans-serif;color:#1F2024;min-height:100vh}
+button{font:inherit;border:none;background:none;cursor:pointer;color:inherit}
+input,textarea{font:inherit;outline:none}
+.wrap{max-width:480px;margin:0 auto;padding:0 20px 40px}
+.hd{padding:28px 0 18px;text-align:center}
+.hd .shop{font-size:24px;font-weight:800;letter-spacing:.01em}
+.hd .sub{font-size:13px;color:#71727A;margin-top:6px;line-height:1.5}
+.card{background:#fff;border-radius:16px;padding:18px;margin-bottom:14px}
+.lbl{font-size:13px;font-weight:700;color:#1F2024;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.lbl .step{width:20px;height:20px;border-radius:10px;background:#006FFD;color:#fff;font-size:11px;font-weight:800;display:inline-flex;align-items:center;justify-content:center}
+.cats{display:flex;gap:8px;margin-bottom:10px}
+.cats button{font-size:13px;font-weight:600;color:#71727A;border:1px solid #C5C6CC;border-radius:99px;padding:7px 14px;background:#fff}
+.cats button.on{color:#fff;background:#006FFD;border-color:#006FFD;font-weight:700}
+.menus{display:flex;flex-direction:column;gap:8px}
+.menus button{display:flex;justify-content:space-between;align-items:center;padding:13px 14px;border-radius:12px;background:#F8F9FE;border:1.5px solid transparent;text-align:left;font-size:14px;font-weight:600}
+.menus button.on{background:#EAF2FF;border-color:#006FFD;color:#006FFD;font-weight:700}
+.menus .min{font-size:12px;color:#8F9098;font-weight:500}
+.menus button.on .min{color:#006FFD}
+.dates{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;scrollbar-width:none}
+.dates::-webkit-scrollbar{display:none}
+.dates button{flex:none;width:58px;padding:10px 0;border-radius:12px;background:#F8F9FE;border:1.5px solid transparent;text-align:center}
+.dates button .dow{font-size:11px;color:#8F9098;font-weight:600}
+.dates button .day{font-size:16px;font-weight:800;margin-top:2px}
+.dates button.on{background:#EAF2FF;border-color:#006FFD}
+.dates button.on .dow,.dates button.on .day{color:#006FFD}
+.dates button:disabled{opacity:.35}
+.dates .sun .dow{color:#ED3241}
+.slots{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.slots button{padding:10px 0;border-radius:10px;background:#F8F9FE;border:1.5px solid transparent;font-size:13px;font-weight:600;text-align:center}
+.slots button.on{background:#006FFD;color:#fff;font-weight:700}
+.empty{text-align:center;color:#8F9098;font-size:13px;padding:18px 0}
+.fld{margin-bottom:12px}
+.fld .t{font-size:12px;font-weight:600;color:#2F3036;margin-bottom:6px}
+.fld .t .opt{font-weight:400;color:#8F9098}
+.fld input,.fld textarea{width:100%;border:1px solid #C5C6CC;border-radius:12px;padding:12px 14px;font-size:14px;background:#fff}
+.fld input:focus,.fld textarea:focus{border:1.5px solid #006FFD}
+.fld textarea{height:84px;resize:none;line-height:1.5}
+.qopts{display:flex;gap:8px;flex-wrap:wrap}
+.qopts button{padding:10px 16px;border-radius:10px;background:#F8F9FE;border:1.5px solid transparent;font-size:13px;font-weight:600}
+.qopts button.on{background:#EAF2FF;border-color:#006FFD;color:#006FFD;font-weight:700}
+.req{color:#ED3241}
+.deposit{background:#FFF4E4;border-radius:12px;padding:12px 14px;font-size:12.5px;line-height:1.6;color:#494A50;margin-bottom:14px}
+.deposit b{color:#E86339}
+.cta{width:100%;height:54px;border-radius:14px;background:#006FFD;color:#fff;font-size:15px;font-weight:700;box-shadow:0 4px 12px rgba(0,111,253,.3)}
+.cta:disabled{background:#C5C6CC;box-shadow:none}
+.note{text-align:center;font-size:11px;color:#8F9098;margin-top:12px;line-height:1.6}
+.done{padding:70px 20px;text-align:center}
+.done .ic{width:76px;height:76px;border-radius:38px;background:#E7F4E8;display:flex;align-items:center;justify-content:center;margin:0 auto 20px}
+.done h2{font-size:20px;font-weight:800}
+.done p{font-size:13.5px;color:#71727A;margin-top:10px;line-height:1.7}
+.done .box{background:#fff;border-radius:16px;padding:16px 20px;margin-top:22px;text-align:left;font-size:13.5px;line-height:1.9}
+.done .box b{color:#006FFD}
+.loading{padding:80px 20px;text-align:center;color:#8F9098;font-size:14px}
+.tap:active{transform:scale(.98);opacity:.9}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"><div class="loading">불러오는 중…</div></div>
+
+<script>
+"use strict";
+/* ============================================================
+   ★ 설정 — Supabase 프로젝트 값 두 개만 붙여넣으면 됩니다 ★
+   (Supabase 대시보드 → Settings → API 에서 복사)
+   ============================================================ */
+const SB_URL = "https://zkqueemnbssjwyddgdjx.supabase.co";
+const SB_KEY = "sb_publishable__4TrdDAUOjWIF2qg2IM2RA_LQGpUl2v";
+
+/* ------------------------------------------------------------ */
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const DOW=['일','월','화','수','목','금','토'];
+const dateISO=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+const toMin=t=>{const[a,b]=t.split(':').map(Number);return a*60+b;};
+const toHM=m=>`${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
+const fmtK=iso=>{const d=new Date(iso+'T00:00:00');return `${d.getMonth()+1}월 ${d.getDate()}일(${DOW[d.getDay()]})`;};
+
+let sb=null, CFG=null;
+let sel={cat:null,menu:null,date:null,time:null,answers:{}};
+let busyCache={}; // date -> [[startMin,endMin]]
+function shopQuestions(){ // 원장이 설정한 예약 질문 (없으면 기본 요청사항 1개)
+  return (CFG.questions&&CFG.questions.length)?CFG.questions:[{label:'요청사항이 있나요?',type:'text',required:false}];
+}
+function qField(q,i){
+  const v=sel.answers[i]||'';
+  const mark=q.required?`<span class="req">*</span>`:`<span class="opt">(선택)</span>`;
+  if(q.type==='yesno') return `<div class="fld"><div class="t">${esc(q.label)} ${mark}</div>
+    <div class="qopts">${['예','아니오'].map(o=>`<button class="tap ${v===o?'on':''}" onclick="setAns(${i},'${o}')">${o}</button>`).join('')}</div></div>`;
+  if(q.type==='choice') return `<div class="fld"><div class="t">${esc(q.label)} ${mark}</div>
+    <div class="qopts">${(q.options||[]).map(o=>`<button class="tap ${v===o?'on':''}" onclick="setAns(${i},'${esc(o).replace(/'/g,"\\'")}')">${esc(o)}</button>`).join('')}</div></div>`;
+  return `<div class="fld"><div class="t">${esc(q.label)} ${mark}</div>
+    <textarea oninput="sel.answers[${i}]=this.value" placeholder="편하게 적어주세요">${esc(v)}</textarea></div>`;
+}
+function setAns(i,v){ sel.answers[i]=v; render(); }
+
+async function boot(){
+  if(SB_URL.includes('붙여넣기')){
+    $('#app').innerHTML=`<div class="loading">예약 페이지가 아직 준비 중이에요 🙏<br>잠시 후 다시 방문해주세요.</div>`;
+    return;
+  }
+  try{
+    sb=window.supabase.createClient(SB_URL,SB_KEY);
+    const {data,error}=await sb.from('shop_config').select('data').eq('id','main').single();
+    if(error||!data) throw error||new Error('no config');
+    CFG=data.data;
+    const firstCat=(CFG.cats||[]).length?CFG.cats[0]:null;
+    sel.cat=firstCat;
+    render();
+  }catch(e){
+    $('#app').innerHTML=`<div class="loading">예약 정보를 불러오지 못했어요.<br>잠시 후 다시 시도해주세요.</div>`;
+  }
+}
+
+function catName(k){ return {nail:'네일',lash:'속눈썹'}[k]||k; }
+function menusOf(cat){ return (CFG.menus||[]).filter(m=>m.cat===cat); }
+
+function next14(){
+  const out=[]; const now=new Date();
+  for(let i=0;i<14;i++){
+    const d=new Date(now.getFullYear(),now.getMonth(),now.getDate()+i);
+    out.push({iso:dateISO(d),dow:d.getDay(),day:d.getDate(),closed:(CFG.closedDays||[]).includes(d.getDay())});
+  }
+  return out;
+}
+
+async function getBusy(date){
+  if(busyCache[date]) return busyCache[date];
+  const {data,error}=await sb.rpc('get_busy_slots',{p_date:date});
+  const ranges=(error||!data)?[]:data.map(r=>[toMin(String(r.start_time).slice(0,5)),toMin(String(r.end_time).slice(0,5))]);
+  busyCache[date]=ranges;
+  return ranges;
+}
+
+function freeSlots(date,dur,busy){
+  const open=toMin(CFG.open||'10:00'), close=toMin(CFG.close||'20:00'), step=CFG.slotMin||30;
+  const out=[];
+  const today=dateISO(new Date());
+  const nowM=new Date().getHours()*60+new Date().getMinutes();
+  for(let t=open;t+dur<=close;t+=step){
+    if(date===today&&t<nowM+30) continue;           // 지난 시간 + 30분 이내 제외
+    if(busy.some(([s,e])=>t<e&&t+dur>s)) continue;  // 겹치는 시간 제외
+    out.push(t);
+  }
+  return out;
+}
+
+async function render(){
+  const cats=CFG.cats||[];
+  const menus=sel.cat?menusOf(sel.cat):(CFG.menus||[]);
+  let slotsHTML=`<div class="empty">시술과 날짜를 먼저 선택해주세요</div>`;
+  if(sel.menu&&sel.date){
+    const busy=await getBusy(sel.date);
+    const free=freeSlots(sel.date,sel.menu.min||60,busy);
+    slotsHTML=free.length
+      ?`<div class="slots">${free.map(t=>`<button class="tap ${sel.time===toHM(t)?'on':''}" onclick="pick('time','${toHM(t)}')">${toHM(t)}</button>`).join('')}</div>`
+      :`<div class="empty">이 날은 가능한 시간이 없어요 😢<br>다른 날짜를 선택해주세요</div>`;
+  }
+  $('#app').innerHTML=`
+  <div class="hd">
+    <div class="shop">${esc(CFG.name||'샵')}</div>
+    <div class="sub">${esc(CFG.notice||'원하시는 시간을 선택해 예약을 요청해주세요.')}</div>
+  </div>
+
+  <div class="card">
+    <div class="lbl"><span class="step">1</span>시술 선택</div>
+    ${cats.length>1?`<div class="cats">${cats.map(c=>`<button class="tap ${sel.cat===c?'on':''}" onclick="pickCat('${c}')">${catName(c)}</button>`).join('')}</div>`:''}
+    <div class="menus">
+      ${menus.map((m,i)=>`<button class="tap ${sel.menu&&sel.menu.name===m.name?'on':''}" onclick="pickMenu('${sel.cat||m.cat}',${i})">
+        <span>${esc(m.name)}</span><span class="min">${m.min||60}분</span></button>`).join('')||`<div class="empty">등록된 메뉴가 없어요</div>`}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="lbl"><span class="step">2</span>날짜 선택</div>
+    <div class="dates">
+      ${next14().map(d=>`<button class="tap ${sel.date===d.iso?'on':''} ${d.dow===0?'sun':''}" ${d.closed?'disabled':''} onclick="pick('date','${d.iso}')">
+        <div class="dow">${d.dow===new Date().getDay()&&d.iso===dateISO(new Date())?'오늘':DOW[d.dow]}</div><div class="day">${d.day}</div></button>`).join('')}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="lbl"><span class="step">3</span>시간 선택</div>
+    ${slotsHTML}
+  </div>
+
+  <div class="card">
+    <div class="lbl"><span class="step">4</span>예약자 정보</div>
+    <div class="fld"><div class="t">이름</div><input id="bkName" placeholder="이름을 입력해주세요" value="${esc(sel.name||'')}" oninput="sel.name=this.value"></div>
+    <div class="fld"><div class="t">연락처</div><input id="bkPhone" inputmode="tel" placeholder="010-0000-0000" value="${esc(sel.phone||'')}" oninput="sel.phone=this.value"></div>
+    ${shopQuestions().map((q,i)=>qField(q,i)).join('')}
+  </div>
+
+  ${CFG.deposit?`<div class="deposit"><b>💳 예약금 안내</b><br>${esc(CFG.deposit).replace(/\n/g,'<br>')}</div>`:''}
+
+  <button class="cta tap" onclick="submitBooking()">예약 요청하기</button>
+  <div class="note">요청 후 원장님이 확인하면 <b>문자로 확정 안내</b>를 드려요.<br>확정 전까지는 예약이 완료된 것이 아니에요.</div>`;
+}
+
+function pickCat(c){ sel.cat=c; sel.menu=null; sel.time=null; render(); }
+function pickMenu(cat,i){ sel.menu=menusOf(cat)[i]; sel.time=null; render(); }
+function pick(k,v){ sel[k]=v; if(k==='date') sel.time=null; render(); }
+
+async function submitBooking(){
+  const name=(sel.name||'').trim(), phone=(sel.phone||'').trim();
+  if(!sel.menu){ alert('시술을 선택해주세요'); return; }
+  if(!sel.date||!sel.time){ alert('날짜와 시간을 선택해주세요'); return; }
+  if(!name){ alert('이름을 입력해주세요'); return; }
+  if(phone.replace(/[^\d]/g,'').length<10){ alert('연락처를 정확히 입력해주세요'); return; }
+  const qs=shopQuestions();
+  for(let i=0;i<qs.length;i++){ // 필수 질문 검사
+    if(qs[i].required&&!String(sel.answers[i]||'').trim()){ alert(`"${qs[i].label}"에 답해주세요`); return; }
+  }
+  const answers=qs.map((q,i)=>({q:q.label,a:String(sel.answers[i]||'').trim()})).filter(x=>x.a);
+  const note=answers.map(x=>`${x.q}: ${x.a}`).join('\n');
+  const dur=sel.menu.min||60;
+  const end=toHM(toMin(sel.time)+dur);
+  const btn=document.querySelector('.cta'); btn.disabled=true; btn.textContent='요청 중…';
+  const {error}=await sb.from('bookings').insert({
+    name, phone, cat:sel.menu.cat||sel.cat, menu:sel.menu.name,
+    duration_min:dur, date:sel.date, start_time:sel.time, end_time:end,
+    note, answers, status:'pending', source:'link'
+  });
+  if(error){ btn.disabled=false; btn.textContent='예약 요청하기'; alert('요청에 실패했어요. 잠시 후 다시 시도해주세요.'); return; }
+  $('#app').innerHTML=`
+  <div class="done">
+    <div class="ic"><svg width="34" height="34" viewBox="0 0 32 32" fill="none" stroke="#298267" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17l6 6L25 11"/></svg></div>
+    <h2>예약 요청 완료!</h2>
+    <p>원장님이 확인하는 대로<br><b>문자로 확정 안내</b>를 드릴게요.</p>
+    <div class="box">
+      📅 <b>${fmtK(sel.date)} ${sel.time}</b><br>
+      💅 ${esc(sel.menu.name)} (${dur}분)<br>
+      👤 ${esc(name)}
+      ${CFG.deposit?`<div style="margin-top:10px;padding-top:10px;border-top:1px solid #F8F9FE;font-size:12.5px;color:#71727A">${esc(CFG.deposit).replace(/\n/g,'<br>')}</div>`:''}
+    </div>
+  </div>`;
+  window.scrollTo(0,0);
+}
+
+boot();
+</script>
+</body>
+</html>
