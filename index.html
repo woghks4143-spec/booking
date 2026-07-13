@@ -84,6 +84,7 @@ const toMin=t=>{const[a,b]=t.split(':').map(Number);return a*60+b;};
 const toHM=m=>`${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
 const fmtK=iso=>{const d=new Date(iso+'T00:00:00');return `${d.getMonth()+1}월 ${d.getDate()}일(${DOW[d.getDay()]})`;};
 
+const SLUG=new URLSearchParams(location.search).get('s')||'main'; // 가게 구분 (링크마다 다름)
 let sb=null, CFG=null;
 let sel={cat:null,menu:null,date:null,time:null,answers:{}};
 let busyCache={}; // date -> [[startMin,endMin]]
@@ -109,18 +110,19 @@ async function boot(){
   }
   try{
     sb=window.supabase.createClient(SB_URL,SB_KEY);
-    const {data,error}=await sb.from('shop_config').select('data').eq('id','main').single();
+    const {data,error}=await sb.from('shops').select('data').eq('slug',SLUG).single();
     if(error||!data) throw error||new Error('no config');
     CFG=data.data;
+    document.title=(CFG.name||'예약')+' 예약';
     const firstCat=(CFG.cats||[]).length?CFG.cats[0]:null;
     sel.cat=firstCat;
     render();
   }catch(e){
-    $('#app').innerHTML=`<div class="loading">예약 정보를 불러오지 못했어요.<br>잠시 후 다시 시도해주세요.</div>`;
+    $('#app').innerHTML=`<div class="loading">예약 정보를 불러오지 못했어요.<br>주소를 다시 확인하거나 잠시 후 시도해주세요.</div>`;
   }
 }
 
-function catName(k){ return {nail:'네일',lash:'속눈썹'}[k]||k; }
+function catName(k){ return (CFG&&CFG.catDefs&&CFG.catDefs[k])||{nail:'네일',lash:'속눈썹'}[k]||k; }
 function menusOf(cat){ return (CFG.menus||[]).filter(m=>m.cat===cat); }
 
 function next14(){
@@ -134,7 +136,7 @@ function next14(){
 
 async function getBusy(date){
   if(busyCache[date]) return busyCache[date];
-  const {data,error}=await sb.rpc('get_busy_slots',{p_date:date});
+  const {data,error}=await sb.rpc('get_busy_slots',{p_date:date,p_shop:SLUG});
   const ranges=(error||!data)?[]:data.map(r=>[toMin(String(r.start_time).slice(0,5)),toMin(String(r.end_time).slice(0,5))]);
   busyCache[date]=ranges;
   return ranges;
@@ -225,7 +227,7 @@ async function submitBooking(){
   const end=toHM(toMin(sel.time)+dur);
   const btn=document.querySelector('.cta'); btn.disabled=true; btn.textContent='요청 중…';
   const {error}=await sb.from('bookings').insert({
-    name, phone, cat:sel.menu.cat||sel.cat, menu:sel.menu.name,
+    shop_id:SLUG, name, phone, cat:sel.menu.cat||sel.cat, menu:sel.menu.name,
     duration_min:dur, date:sel.date, start_time:sel.time, end_time:end,
     note, answers, status:'pending', source:'link'
   });
