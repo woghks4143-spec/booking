@@ -82,6 +82,7 @@ const DOW=['일','월','화','수','목','금','토'];
 const dateISO=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 const toMin=t=>{const[a,b]=t.split(':').map(Number);return a*60+b;};
 const toHM=m=>`${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
+const fmtMin=min=>{const h=Math.floor((min||60)/60),m=(min||60)%60;return h?(m?`${h}시간 ${m}분`:`${h}시간`):`${m}분`;};
 const fmtK=iso=>{const d=new Date(iso+'T00:00:00');return `${d.getMonth()+1}월 ${d.getDate()}일(${DOW[d.getDay()]})`;};
 
 const SLUG=new URLSearchParams(location.search).get('s')||'main'; // 가게 구분 (링크마다 다름)
@@ -177,7 +178,7 @@ async function render(){
     ${cats.length>1?`<div class="cats">${cats.map(c=>`<button class="tap ${sel.cat===c?'on':''}" onclick="pickCat('${c}')">${catName(c)}</button>`).join('')}</div>`:''}
     <div class="menus">
       ${menus.map((m,i)=>`<button class="tap ${sel.menu&&sel.menu.name===m.name?'on':''}" onclick="pickMenu('${sel.cat||m.cat}',${i})">
-        <span>${esc(m.name)}</span><span class="min">${m.min||60}분</span></button>`).join('')||`<div class="empty">등록된 메뉴가 없어요</div>`}
+        <span>${esc(m.name)}</span><span class="min">${fmtMin(m.min)}</span></button>`).join('')||`<div class="empty">등록된 메뉴가 없어요</div>`}
     </div>
   </div>
 
@@ -239,7 +240,7 @@ async function submitBooking(){
     <p>원장님이 확인하는 대로<br><b>문자로 확정 안내</b>를 드릴게요.</p>
     <div class="box">
       📅 <b>${fmtK(sel.date)} ${sel.time}</b><br>
-      💅 ${esc(sel.menu.name)} (${dur}분)<br>
+      💅 ${esc(sel.menu.name)} (${fmtMin(dur)})<br>
       👤 ${esc(name)}
       ${CFG.deposit?`<div style="margin-top:10px;padding-top:10px;border-top:1px solid #F8F9FE;font-size:12.5px;color:#71727A">${esc(CFG.deposit).replace(/\n/g,'<br>')}</div>`:''}
     </div>
