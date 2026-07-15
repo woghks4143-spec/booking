@@ -115,6 +115,12 @@ async function boot(){
     if(error||!data) throw error||new Error('no config');
     CFG=data.data;
     document.title=(CFG.name||'예약')+' 예약';
+    try{ // 담당 선생님 목록은 항상 최신으로
+      const st=await sb.rpc('shop_staff',{p_slug:SLUG});
+      if(!st.error&&st.data&&st.data.length){
+        CFG.staff=[...new Set(st.data.map(x=>typeof x==='string'?x:(x&&Object.values(x)[0])))].filter(Boolean);
+      }
+    }catch(e){}
     const firstCat=(CFG.cats||[]).length?CFG.cats[0]:null;
     sel.cat=firstCat;
     render();
