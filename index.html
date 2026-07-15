@@ -87,7 +87,7 @@ const fmtK=iso=>{const d=new Date(iso+'T00:00:00');return `${d.getMonth()+1}월 
 
 const SLUG=new URLSearchParams(location.search).get('s')||'main'; // 가게 구분 (링크마다 다름)
 let sb=null, CFG=null;
-let sel={cat:null,menu:null,date:null,time:null,answers:{}};
+let sel={cat:null,menu:null,date:null,time:null,answers:{},staff:''};
 let busyCache={}; // date -> [[startMin,endMin]]
 function shopQuestions(){ // 원장이 설정한 예약 질문 (없으면 기본 요청사항 1개)
   return (CFG.questions&&CFG.questions.length)?CFG.questions:[{label:'요청사항이 있나요?',type:'text',required:false}];
@@ -182,6 +182,14 @@ async function render(){
     </div>
   </div>
 
+  ${(CFG.staff&&CFG.staff.length>1)?`<div class="card">
+    <div class="lbl">👤 담당 선생님 <span style="font-size:11px;font-weight:400;color:#8F9098">(선택)</span></div>
+    <div class="qopts">
+      <button class="tap ${!sel.staff?'on':''}" onclick="sel.staff='';render()">아무나 괜찮아요</button>
+      ${CFG.staff.map(s=>`<button class="tap ${sel.staff===s?'on':''}" onclick="sel.staff='${esc(s).replace(/'/g,"\\'")}';render()">${esc(s)}</button>`).join('')}
+    </div>
+  </div>`:''}
+
   <div class="card">
     <div class="lbl"><span class="step">2</span>날짜 선택</div>
     <div class="dates">
@@ -227,11 +235,13 @@ async function submitBooking(){
   const dur=sel.menu.min||60;
   const end=toHM(toMin(sel.time)+dur);
   const btn=document.querySelector('.cta'); btn.disabled=true; btn.textContent='요청 중…';
-  const {error}=await sb.from('bookings').insert({
+  const row={
     shop_id:SLUG, name, phone, cat:sel.menu.cat||sel.cat, menu:sel.menu.name,
     duration_min:dur, date:sel.date, start_time:sel.time, end_time:end,
-    note, answers, status:'pending', source:'link'
-  });
+    note, answers, staff:sel.staff||'', status:'pending', source:'link'
+  };
+  let {error}=await sb.from('bookings').insert(row);
+  if(error&&String(error.message||'').includes('staff')){ delete row.staff; ({error}=await sb.from('bookings').insert(row)); }
   if(error){ btn.disabled=false; btn.textContent='예약 요청하기'; alert('요청에 실패했어요. 잠시 후 다시 시도해주세요.'); return; }
   $('#app').innerHTML=`
   <div class="done">
@@ -240,7 +250,7 @@ async function submitBooking(){
     <p>원장님이 확인하는 대로<br><b>문자로 확정 안내</b>를 드릴게요.</p>
     <div class="box">
       📅 <b>${fmtK(sel.date)} ${sel.time}</b><br>
-      💅 ${esc(sel.menu.name)} (${fmtMin(dur)})<br>
+      💅 ${esc(sel.menu.name)} (${fmtMin(dur)})${sel.staff?`<br>👤 ${esc(sel.staff)} 선생님 지명`:''}<br>
       👤 ${esc(name)}
       ${CFG.deposit?`<div style="margin-top:10px;padding-top:10px;border-top:1px solid #F8F9FE;font-size:12.5px;color:#71727A">${esc(CFG.deposit).replace(/\n/g,'<br>')}</div>`:''}
     </div>
