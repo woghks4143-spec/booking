@@ -85,10 +85,42 @@ const toHM=m=>`${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padSta
 const fmtMin=min=>{const h=Math.floor((min||60)/60),m=(min||60)%60;return h?(m?`${h}시간 ${m}분`:`${h}시간`):`${m}분`;};
 const fmtK=iso=>{const d=new Date(iso+'T00:00:00');return `${d.getMonth()+1}월 ${d.getDate()}일(${DOW[d.getDay()]})`;};
 
-const SLUG=new URLSearchParams(location.search).get('s')||'main'; // 가게 구분 (링크마다 다름)
-let sb=null, CFG=null;
-let sel={cat:null,menu:null,date:null,time:null,answers:{},staff:''};
+const SLUG=new URLSearchParams(location.search).get('s')||'suhvprg'; // 가게 구분 (기본 = 핀더)
+let sb=null, CFG=null, TEAM=[]; // TEAM: 선생님 프로필 목록
+let sel={cat:null,menu:null,date:null,time:null,answers:{},staff:'',name:'',phone:'',lookup:undefined};
 let busyCache={}; // date -> [[startMin,endMin]]
+async function doLookup(){ // 이름+전화로 내 지난 시술 확인
+  const name=(sel.name||'').trim(), phone=(sel.phone||'').trim();
+  if(!name||phone.replace(/[^\d]/g,'').length<10){ alert('이름과 연락처를 정확히 입력해주세요'); return; }
+  sel.lookup='loading'; render();
+  try{
+    const {data,error}=await sb.rpc('customer_lookup',{p_slug:SLUG,p_phone:phone,p_name:name});
+    sel.lookup=(error||!data)?null:data;
+  }catch(e){ sel.lookup=null; }
+  render();
+}
+function lookupCard(){
+  const r=sel.lookup;
+  let result='';
+  if(r==='loading') result=`<div class="empty">확인 중…</div>`;
+  else if(r===null) result=`<div style="font-size:12px;color:#8F9098;background:#F8F9FE;border-radius:10px;padding:10px 12px;margin-top:10px">기록을 찾지 못했어요 — 이름과 번호를 확인하시거나, 처음 방문이시면 그대로 예약해주세요 😊</div>`;
+  else if(r) result=`<div style="margin-top:10px">
+    <div style="font-size:13px;font-weight:700;color:#006FFD">💙 ${esc(r.name)}님, 다시 만나 반가워요! (총 ${r.visitCount||0}회 방문)</div>
+    <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
+      ${(r.visits||[]).map(v=>{const d=new Date(v.date+'T00:00:00');return `<div style="display:flex;justify-content:space-between;align-items:center;background:#F8F9FE;border-radius:10px;padding:9px 12px;font-size:12.5px">
+        <span style="color:#1F2024;font-weight:600">${esc(v.menu)}</span>
+        <span style="color:#71727A">${d.getMonth()+1}/${d.getDate()} · <b style="color:#006FFD">${esc(v.staff)}</b></span></div>`;}).join('')||`<div class="empty">시술 기록이 아직 없어요</div>`}
+    </div></div>`;
+  return `<div class="card">
+    <div class="lbl">🔎 다시 방문하셨나요? <span style="font-size:11px;font-weight:400;color:#8F9098">(지난 시술·담당 확인)</span></div>
+    <div style="display:flex;gap:8px">
+      <input placeholder="이름" value="${esc(sel.name||'')}" oninput="sel.name=this.value" style="flex:0.8;border:1px solid #C5C6CC;border-radius:10px;padding:10px 12px;font-size:13px">
+      <input placeholder="010-0000-0000" inputmode="tel" value="${esc(sel.phone||'')}" oninput="sel.phone=this.value" style="flex:1.2;border:1px solid #C5C6CC;border-radius:10px;padding:10px 12px;font-size:13px">
+      <button class="tap" style="flex:none;padding:0 14px;border-radius:10px;background:#EAF2FF;color:#006FFD;font-size:12.5px;font-weight:700" onclick="doLookup()">확인</button>
+    </div>
+    ${result}
+  </div>`;
+}
 function shopQuestions(){ // 원장이 설정한 예약 질문 (없으면 기본 요청사항 1개)
   return (CFG.questions&&CFG.questions.length)?CFG.questions:[{label:'요청사항이 있나요?',type:'text',required:false}];
 }
@@ -115,10 +147,16 @@ async function boot(){
     if(error||!data) throw error||new Error('no config');
     CFG=data.data;
     document.title=(CFG.name||'예약')+' 예약';
-    try{ // 담당 선생님 목록은 항상 최신으로
-      const st=await sb.rpc('shop_staff',{p_slug:SLUG});
-      if(!st.error&&st.data&&st.data.length){
-        CFG.staff=[...new Set(st.data.map(x=>typeof x==='string'?x:(x&&Object.values(x)[0])))].filter(Boolean);
+    try{ // 담당 선생님 프로필(사진·소개)까지 최신으로
+      const tm=await sb.rpc('shop_team',{p_slug:SLUG});
+      if(!tm.error&&Array.isArray(tm.data)&&tm.data.length){
+        TEAM=tm.data.filter(t=>t&&t.name);
+        CFG.staff=[...new Set(TEAM.map(t=>t.name))];
+      } else {
+        const st=await sb.rpc('shop_staff',{p_slug:SLUG});
+        if(!st.error&&st.data&&st.data.length){
+          CFG.staff=[...new Set(st.data.map(x=>typeof x==='string'?x:(x&&Object.values(x)[0])))].filter(Boolean);
+        }
       }
     }catch(e){}
     const firstCat=(CFG.cats||[]).length?CFG.cats[0]:null;
@@ -175,9 +213,12 @@ async function render(){
   }
   $('#app').innerHTML=`
   <div class="hd">
+    ${CFG.logo?`<img src="${CFG.logo}" style="width:72px;height:72px;border-radius:50%;object-fit:cover;margin:0 auto 10px;display:block;box-shadow:0 4px 14px rgba(0,0,0,.1)">`:''}
     <div class="shop">${esc(CFG.name||'샵')}</div>
     <div class="sub">${esc(CFG.notice||'원하시는 시간을 선택해 예약을 요청해주세요.')}</div>
   </div>
+
+  ${lookupCard()}
 
   <div class="card">
     <div class="lbl"><span class="step">1</span>시술 선택</div>
@@ -190,10 +231,22 @@ async function render(){
 
   ${(CFG.staff&&CFG.staff.length>1)?`<div class="card">
     <div class="lbl">👤 담당 선생님 <span style="font-size:11px;font-weight:400;color:#8F9098">(선택)</span></div>
-    <div class="qopts">
+    ${TEAM.length>1&&TEAM.some(t=>t.photo||t.intro)?`
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <button class="tap" style="display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:12px;border:1.5px solid ${!sel.staff?'#006FFD':'transparent'};background:${!sel.staff?'#EAF2FF':'#F8F9FE'};text-align:left" onclick="sel.staff='';render()">
+        <div style="width:44px;height:44px;border-radius:22px;background:#E8E9F1;display:flex;align-items:center;justify-content:center;font-size:18px;flex:none">✨</div>
+        <div style="font-size:13.5px;font-weight:700;color:${!sel.staff?'#006FFD':'#1F2024'}">아무나 괜찮아요</div>
+      </button>
+      ${TEAM.map(t=>{const on=sel.staff===t.name;return `<button class="tap" style="display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:12px;border:1.5px solid ${on?'#006FFD':'transparent'};background:${on?'#EAF2FF':'#F8F9FE'};text-align:left" onclick="sel.staff='${esc(t.name).replace(/'/g,"\\'")}';render()">
+        ${t.photo?`<img src="${t.photo}" style="width:44px;height:44px;border-radius:22px;object-fit:cover;flex:none">`:`<div style="width:44px;height:44px;border-radius:22px;background:#EAF2FF;color:#006FFD;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;flex:none">${esc(t.name[0])}</div>`}
+        <div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:700;color:${on?'#006FFD':'#1F2024'}">${esc(t.name)}${t.role==='owner'?' <span style="font-size:10px">👑</span>':''}</div>
+        ${t.intro?`<div style="font-size:11px;color:#71727A;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(t.intro)}</div>`:''}</div>
+      </button>`;}).join('')}
+    </div>`
+    :`<div class="qopts">
       <button class="tap ${!sel.staff?'on':''}" onclick="sel.staff='';render()">아무나 괜찮아요</button>
       ${CFG.staff.map(s=>`<button class="tap ${sel.staff===s?'on':''}" onclick="sel.staff='${esc(s).replace(/'/g,"\\'")}';render()">${esc(s)}</button>`).join('')}
-    </div>
+    </div>`}
   </div>`:''}
 
   <div class="card">
