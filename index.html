@@ -62,6 +62,15 @@ input,textarea{font:inherit;outline:none}
 .mr-agree.on{color:#298267;border-color:#298267;background:#F2FBF4}
 .mr-agree .cb{width:20px;height:20px;border-radius:6px;border:1.5px solid #C5C6CC;display:inline-flex;align-items:center;justify-content:center;font-size:12px;flex:none;background:#fff}
 .mr-agree.on .cb{background:#298267;border-color:#298267;color:#fff}
+.cpn{display:flex;align-items:center;gap:12px;width:100%;padding:12px 14px;border-radius:12px;background:#F8F9FE;border:1.5px dashed #C5C6CC;margin-bottom:8px;text-align:left}
+.cpn.on{background:#EAF2FF;border-color:#006FFD;border-style:solid}
+.cpn .amt{flex:none;display:flex;flex-direction:column;align-items:center;line-height:1.15;font-size:15px;font-weight:800;color:#006FFD;min-width:64px}
+.cpn .amt small{font-size:9.5px;font-weight:700;color:#8F9098}
+.cpn.on .amt small{color:#006FFD}
+.cpn .nm{display:block;font-size:13px;font-weight:700;color:#1F2024}
+.cpn .tg{display:inline-block;font-size:9px;font-weight:700;color:#7B4DBB;background:#F3EDFB;border-radius:99px;padding:2px 7px;margin-top:3px}
+.cpn .chk{flex:none;width:22px;height:22px;border-radius:11px;border:1.5px solid #C5C6CC;color:#fff;font-size:12px;display:flex;align-items:center;justify-content:center;background:#fff}
+.cpn.on .chk{background:#006FFD;border-color:#006FFD}
 .slots{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
 .slots button{padding:10px 0;border-radius:10px;background:#F8F9FE;border:1.5px solid transparent;font-size:13px;font-weight:600;text-align:center}
 .slots button.on{background:#006FFD;color:#fff;font-weight:700}
@@ -115,16 +124,29 @@ const fmtK=iso=>{const d=new Date(iso+'T00:00:00');return `${d.getMonth()+1}월 
 
 const SLUG=new URLSearchParams(location.search).get('s')||'suhvprg'; // 가게 구분 (기본 = 핀더)
 let sb=null, CFG=null, TEAM=[]; // TEAM: 선생님 프로필 목록
-let sel={cat:null,menu:null,date:null,time:null,answers:{},staff:'',name:'',phone:'',lookup:undefined,photos:[],couponCode:'',agree:false};
+let sel={cat:null,menu:null,date:null,time:null,answers:{},staff:'',name:'',phone:'',lookup:undefined,photos:[],couponSel:null,usedCoupons:[],agree:false};
 let busyCache={}; // date -> [[startMin,endMin]]
 let bcalYM=dateISO(new Date()).slice(0,7); // 달력에 보이는 달
 let mbCache={}; // 'YYYY-MM' -> {iso:[[s,e],...]} · null이면 서버에 함수 없음(마감 표시만 생략)
-let lkTimer=null, lkLastKey=''; // 이름+연락처가 채워지면 자동으로 지난 내역 조회
+let lkTimer=null, lkLastKey='', cpLastPh=''; // 이름+연락처가 채워지면 자동 조회
 function autoLookup(){
   clearTimeout(lkTimer);
   lkTimer=setTimeout(async()=>{
     const name=(sel.name||'').trim(), ph=(sel.phone||'').replace(/[^\d]/g,'');
-    if(!name||ph.length<10){
+    const phOk=ph.length>=10;
+    // ① 1인 1회 쿠폰 사용 이력 — 연락처만으로 확인
+    if(phOk&&(CFG.coupons||[]).some(c=>c.once)){
+      if(ph!==cpLastPh){
+        cpLastPh=ph;
+        try{
+          const {data,error}=await sb.rpc('used_coupons',{p_shop:SLUG,p_phone:ph});
+          if(cpLastPh===ph) sel.usedCoupons=(error||!Array.isArray(data))?[]:data;
+        }catch(e){ sel.usedCoupons=[]; }
+        if(cpLastPh===ph) updCpArea();
+      }
+    } else if(!phOk&&(sel.usedCoupons.length||cpLastPh)){ cpLastPh=''; sel.usedCoupons=[]; updCpArea(); }
+    // ② 지난 시술·주문 내역 — 이름+연락처가 둘 다 맞아야
+    if(!name||!phOk){
       lkLastKey='';
       if(sel.lookup!==undefined){ sel.lookup=undefined; updLk(); }
       return;
@@ -269,11 +291,12 @@ async function getBusy(date){
 
 function freeSlots(date,dur,busy){
   const open=toMin(CFG.open||'10:00'), close=toMin(CFG.close||'20:00'), step=CFG.slotMin||30;
+  const lead=(CFG.leadMin!=null?CFG.leadMin:30);   // 예약 접수 마감 — 원장 설정
+  const earliest=Date.now()+lead*60000;
+  const base=new Date(date+'T00:00:00').getTime();
   const out=[];
-  const today=dateISO(new Date());
-  const nowM=new Date().getHours()*60+new Date().getMinutes();
   for(let t=open;t+dur<=close;t+=step){
-    if(date===today&&t<nowM+30) continue;           // 지난 시간 + 30분 이내 제외
+    if(base+t*60000<earliest) continue;             // 너무 임박한 시간 제외 (날짜 넘어가도 정확)
     if(busy.some(([s,e])=>t<e&&t+dur>s)) continue;  // 겹치는 시간 제외
     out.push(t);
   }
@@ -327,6 +350,11 @@ async function render(){
     </div>
   </div>
 
+  ${(CFG.coupons&&CFG.coupons.length)?`<div class="card">
+    <div class="lbl">🎟️ 쿠폰 <span style="font-size:11px;font-weight:400;color:#8F9098">지금 이런 혜택이 있어요</span></div>
+    <div id="cpArea">${couponListHTML()}</div>
+  </div>`:''}
+
   ${(CFG.staff&&CFG.staff.length>1)?`<div class="card">
     <div class="lbl">👤 담당 선생님 <span style="font-size:11px;font-weight:400;color:#8F9098">(선택)</span></div>
     ${TEAM.length>1&&TEAM.some(t=>t.photo||t.intro)?`
@@ -371,11 +399,6 @@ async function render(){
       </div>
       <div style="font-size:10.5px;color:#8F9098;margin-top:6px">원하는 디자인·사진을 올려주시면 사장님이 보고 가능 여부를 확인해요.</div>
     </div>
-    ${(CFG.coupons&&CFG.coupons.length)?`<div class="fld" style="margin-bottom:0">
-      <div class="t">쿠폰 코드 <span class="opt">(선택)</span></div>
-      <input id="cpIn" placeholder="쿠폰 코드가 있다면 입력해주세요" value="${esc(sel.couponCode||'')}" oninput="sel.couponCode=this.value;updCp()" style="text-transform:uppercase">
-      <div id="cpMsg">${cpMsgHTML()}</div>
-    </div>`:''}
   </div>
 
   ${CFG.deposit?`<div class="deposit"><b>💳 예약금 안내</b><br>${esc(CFG.deposit).replace(/\n/g,'<br>')}</div>`:''}
@@ -415,18 +438,32 @@ function addPhoto(){ // 원하는 디자인 사진 — 자동 축소 후 첨부
   inp.click();
 }
 function rmPhoto(i){ sel.photos.splice(i,1); render(); }
+function couponUsed(c){ return (sel.usedCoupons||[]).some(u=>String(u).includes('('+c.code)); } // 이 연락처가 이미 쓴 1인 1회 쿠폰?
 function findCoupon(){
-  const code=(sel.couponCode||'').trim().toUpperCase().replace(/\s/g,'');
-  if(!code) return null;
-  return (CFG.coupons||[]).find(c=>String(c.code||'').toUpperCase()===code)||null;
+  if(!sel.couponSel) return null;
+  const c=(CFG.coupons||[]).find(x=>x.code===sel.couponSel);
+  return (c&&!(c.once&&couponUsed(c)))?c:null;
 }
-function cpMsgHTML(){
-  if(!(sel.couponCode||'').trim()) return '';
-  const c=findCoupon();
-  return c?`<div style="font-size:12px;font-weight:700;color:#298267;margin-top:6px">✅ ${esc(c.label)}${c.amount?` — ${c.amount.toLocaleString('ko-KR')}원 할인`:''} 적용!</div>`
-    :`<div style="font-size:12px;color:#8F9098;margin-top:6px">일치하는 쿠폰이 없어요 — 코드를 확인해주세요</div>`;
+function pickCoupon(code){ sel.couponSel=(sel.couponSel===code)?null:code; render(); }
+function couponListHTML(){
+  const list=(CFG.coupons||[]).filter(c=>!(c.once&&couponUsed(c))); // 쓴 쿠폰은 그 고객에게 안 보여요
+  if(!list.length) return `<div style="font-size:12px;color:#8F9098;text-align:center;padding:6px 0">지금 사용하실 수 있는 쿠폰이 없어요</div>`;
+  return list.map(c=>{
+    const on=sel.couponSel===c.code;
+    return `<button class="tap cpn ${on?'on':''}" onclick="pickCoupon('${esc(c.code)}')">
+      <span class="amt">${c.amount?c.amount.toLocaleString('ko-KR')+'원':'혜택'}<small>할인</small></span>
+      <span style="flex:1;min-width:0">
+        <span class="nm">${esc(c.label)}</span>
+        ${c.once?`<span class="tg">1인 1회</span>`:''}
+      </span>
+      <span class="chk">${on?'✓':''}</span>
+    </button>`;
+  }).join('')+`<div style="font-size:10.5px;color:#8F9098;text-align:center;margin-top:2px">탭해서 적용 — 예약과 함께 접수되고, 결제할 때 할인받아요</div>`;
 }
-function updCp(){ const el=document.getElementById('cpMsg'); if(el) el.innerHTML=cpMsgHTML(); } // 입력 중 전체 재렌더 금지
+function updCpArea(){
+  if(sel.couponSel&&!findCoupon()) sel.couponSel=null; // 알고 보니 이미 쓴 쿠폰이면 선택 해제
+  const el=document.getElementById('cpArea'); if(el) el.innerHTML=couponListHTML();
+}
 function pickCat(c){ sel.cat=c; sel.menu=null; sel.time=null; render(); }
 function pickMenu(cat,i){ sel.menu=menusOf(cat)[i]; sel.time=null; render(); }
 function pick(k,v){ sel[k]=v; if(k==='date') sel.time=null; render(); }
@@ -452,6 +489,16 @@ async function submitBooking(){
   const end=toHM(toMin(sel.time)+dur);
   const btn=document.querySelector('.cta'); btn.disabled=true; btn.textContent='요청 중…';
   const cpn=findCoupon();
+  if(cpn&&cpn.once){ // 1인 1회 쿠폰 — 제출 직전 최종 확인
+    try{
+      const {data}=await sb.rpc('used_coupons',{p_shop:SLUG,p_phone:phone.replace(/[^\d]/g,'')});
+      if(Array.isArray(data)&&data.some(u=>String(u).includes('('+cpn.code))){
+        sel.usedCoupons=data; sel.couponSel=null;
+        alert('이미 사용하신 쿠폰이에요 🙏 쿠폰 없이 예약을 계속할 수 있어요.');
+        render(); return;
+      }
+    }catch(e){}
+  }
   const row={
     shop_id:SLUG, name, phone, cat:sel.menu.cat||sel.cat, menu:sel.menu.name,
     duration_min:dur, date:sel.date, start_time:sel.time, end_time:end,
