@@ -36,15 +36,32 @@ input,textarea{font:inherit;outline:none}
 #lightbox{position:fixed;inset:0;background:rgba(8,10,14,.93);display:flex;align-items:center;justify-content:center;z-index:99;flex-direction:column;gap:12px}
 #lightbox img{max-width:94%;max-height:84%;border-radius:14px}
 #lightbox .close{color:rgba(255,255,255,.8);font-size:13px;font-weight:600}
-.dates{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;scrollbar-width:none}
-.dates::-webkit-scrollbar{display:none}
-.dates button{flex:none;width:58px;padding:10px 0;border-radius:12px;background:#F8F9FE;border:1.5px solid transparent;text-align:center}
-.dates button .dow{font-size:11px;color:#8F9098;font-weight:600}
-.dates button .day{font-size:16px;font-weight:800;margin-top:2px}
-.dates button.on{background:#EAF2FF;border-color:#006FFD}
-.dates button.on .dow,.dates button.on .day{color:#006FFD}
-.dates button:disabled{opacity:.35}
-.dates .sun .dow{color:#ED3241}
+.bcal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.bcal-title{font-size:14.5px;font-weight:800}
+.bcal-nav{width:32px;height:32px;border-radius:16px;background:#F8F9FE;font-size:15px;font-weight:700;color:#494A50}
+.bcal-nav:disabled{opacity:.25}
+.bcal{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+.bcal .dw{text-align:center;font-size:10.5px;font-weight:700;color:#8F9098;padding:4px 0}
+.bcal .dw.sun{color:#ED3241}
+.bcal .dc{height:47px;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border:1.5px solid transparent}
+.bcal .dc .n{font-size:13.5px;font-weight:700;color:#1F2024;line-height:1}
+.bcal .dc .st{font-size:8.5px;font-weight:700;line-height:1}
+.bcal .dc.dim{opacity:.25}
+.bcal .dc.off,.bcal .dc.full{background:#F8F9FE}
+.bcal .dc.off .n,.bcal .dc.full .n{color:#B9BAC1}
+.bcal .dc.off .st{color:#ED3241}
+.bcal .dc.full .st{color:#8F9098}
+.bcal .dc.on{background:#EAF2FF;border-color:#006FFD}
+.bcal .dc.on .n,.bcal .dc.on .st{color:#006FFD}
+.announce{background:#EAF2FF;border-radius:14px;padding:13px 15px;font-size:12.5px;line-height:1.7;color:#494A50;margin-bottom:14px}
+.announce b{color:#006FFD}
+.mustread{background:#FFF0F1;border:1.5px solid #FFB3BA;border-radius:14px;padding:14px;margin-bottom:14px}
+.mustread .mr-t{font-size:13.5px;font-weight:800;color:#ED3241}
+.mustread .mr-b{font-size:12.5px;line-height:1.7;color:#494A50;margin-top:8px}
+.mr-agree{display:flex;align-items:center;gap:8px;width:100%;margin-top:12px;padding:12px;border-radius:10px;background:#fff;font-size:13px;font-weight:700;color:#71727A;border:1.5px solid #E8E9F1}
+.mr-agree.on{color:#298267;border-color:#298267;background:#F2FBF4}
+.mr-agree .cb{width:20px;height:20px;border-radius:6px;border:1.5px solid #C5C6CC;display:inline-flex;align-items:center;justify-content:center;font-size:12px;flex:none;background:#fff}
+.mr-agree.on .cb{background:#298267;border-color:#298267;color:#fff}
 .slots{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
 .slots button{padding:10px 0;border-radius:10px;background:#F8F9FE;border:1.5px solid transparent;font-size:13px;font-weight:600;text-align:center}
 .slots button.on{background:#006FFD;color:#fff;font-weight:700}
@@ -98,8 +115,10 @@ const fmtK=iso=>{const d=new Date(iso+'T00:00:00');return `${d.getMonth()+1}월 
 
 const SLUG=new URLSearchParams(location.search).get('s')||'suhvprg'; // 가게 구분 (기본 = 핀더)
 let sb=null, CFG=null, TEAM=[]; // TEAM: 선생님 프로필 목록
-let sel={cat:null,menu:null,date:null,time:null,answers:{},staff:'',name:'',phone:'',lookup:undefined};
+let sel={cat:null,menu:null,date:null,time:null,answers:{},staff:'',name:'',phone:'',lookup:undefined,photos:[],couponCode:'',agree:false};
 let busyCache={}; // date -> [[startMin,endMin]]
+let bcalYM=dateISO(new Date()).slice(0,7); // 달력에 보이는 달
+let mbCache={}; // 'YYYY-MM' -> {iso:[[s,e],...]} · null이면 서버에 함수 없음(마감 표시만 생략)
 let lkTimer=null, lkLastKey=''; // 이름+연락처가 채워지면 자동으로 지난 내역 조회
 function autoLookup(){
   clearTimeout(lkTimer);
@@ -184,13 +203,60 @@ async function boot(){
 function catName(k){ return (CFG&&CFG.catDefs&&CFG.catDefs[k])||{nail:'네일',lash:'속눈썹'}[k]||k; }
 function menusOf(cat){ return (CFG.menus||[]).filter(m=>m.cat===cat); }
 
-function next14(){
-  const out=[]; const now=new Date();
-  for(let i=0;i<14;i++){
-    const d=new Date(now.getFullYear(),now.getMonth(),now.getDate()+i);
-    out.push({iso:dateISO(d),dow:d.getDay(),day:d.getDate(),closed:(CFG.closedDays||[]).includes(d.getDay())});
+const MAX_AHEAD=2; // 이번 달 포함 +2달까지 예약 가능
+function ymShift(ym,d){ const [y,m]=ym.split('-').map(Number); const n=new Date(y,m-1+d,1); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`; }
+function bcalShift(d){
+  const cur=dateISO(new Date()).slice(0,7);
+  const next=ymShift(bcalYM,d);
+  if(next<cur||next>ymShift(cur,MAX_AHEAD)) return;
+  bcalYM=next; render();
+}
+async function monthBusy(ym){ // 한 달치 예약 현황 (마감 표시용)
+  if(ym in mbCache) return mbCache[ym];
+  const [y,m]=ym.split('-').map(Number);
+  try{
+    const {data,error}=await sb.rpc('get_busy_month',{p_shop:SLUG,p_from:`${ym}-01`,p_to:dateISO(new Date(y,m,0))});
+    if(error) throw error;
+    const map={};
+    (data||[]).forEach(r=>{ const k=String(r.day).slice(0,10); (map[k]=map[k]||[]).push([toMin(String(r.start_time).slice(0,5)),toMin(String(r.end_time).slice(0,5))]); });
+    mbCache[ym]=map;
+  }catch(e){ mbCache[ym]=null; }
+  return mbCache[ym];
+}
+function dayFull(iso,busy){ // 이 날 선택한 시술이 들어갈 자리가 없으면 '마감'
+  if(!busy) return false;
+  const dur=(sel.menu&&sel.menu.min)||CFG.slotMin||30;
+  return freeSlots(iso,dur,busy[iso]||[]).length===0;
+}
+function calHTML(busy){
+  const [y,m]=bcalYM.split('-').map(Number);
+  const startDow=new Date(y,m-1,1).getDay();
+  const days=new Date(y,m,0).getDate();
+  const today=dateISO(new Date()), curYM=today.slice(0,7);
+  const cells=[];
+  for(let i=0;i<startDow;i++) cells.push(`<div class="dc"></div>`);
+  for(let d=1;d<=days;d++){
+    const iso=`${bcalYM}-${String(d).padStart(2,'0')}`;
+    const dow=new Date(y,m-1,d).getDay();
+    const past=iso<today;
+    const off=!past&&((CFG.closedDays||[]).includes(dow)||(CFG.closedDates||[]).includes(iso));
+    const full=!past&&!off&&dayFull(iso,busy);
+    const ok=!past&&!off&&!full;
+    const cls=['dc',past?'dim':'',off?'off':'',full?'full':'',sel.date===iso?'on':''].filter(Boolean).join(' ');
+    const st=off?'휴무':full?'마감':iso===today?'오늘':'';
+    cells.push(ok
+      ?`<button class="${cls} tap" onclick="pick('date','${iso}')"><span class="n">${d}</span>${st?`<span class="st" style="color:#006FFD">${st}</span>`:''}</button>`
+      :`<div class="${cls}"><span class="n">${d}</span>${st?`<span class="st">${st}</span>`:''}</div>`);
   }
-  return out;
+  return `<div class="bcal-head">
+    <button class="bcal-nav tap" ${bcalYM<=curYM?'disabled':''} onclick="bcalShift(-1)">‹</button>
+    <span class="bcal-title">${y}년 ${m}월</span>
+    <button class="bcal-nav tap" ${bcalYM>=ymShift(curYM,MAX_AHEAD)?'disabled':''} onclick="bcalShift(1)">›</button>
+  </div>
+  <div class="bcal">
+    ${DOW.map((d,i)=>`<div class="dw ${i===0?'sun':''}">${d}</div>`).join('')}
+    ${cells.join('')}
+  </div>`;
 }
 
 async function getBusy(date){
@@ -217,6 +283,7 @@ function freeSlots(date,dur,busy){
 async function render(){
   const cats=CFG.cats||[];
   const menus=sel.cat?menusOf(sel.cat):(CFG.menus||[]);
+  const busyMonth=await monthBusy(bcalYM);
   let slotsHTML=`<div class="empty">시술과 날짜를 먼저 선택해주세요</div>`;
   if(sel.menu&&sel.date){
     const busy=await getBusy(sel.date);
@@ -231,6 +298,8 @@ async function render(){
     <div class="shop">${esc(CFG.name||'샵')}</div>
     <div class="sub">${esc(CFG.notice||'원하시는 시간을 선택해 예약을 요청해주세요.')}</div>
   </div>
+
+  ${CFG.announce?`<div class="announce"><b>📢 공지사항</b><br>${esc(CFG.announce).replace(/\n/g,'<br>')}</div>`:''}
 
   <div class="card">
     <div class="lbl"><span class="step">1</span>예약자 정보 <span style="font-size:11px;font-weight:400;color:#8F9098">재방문이시면 지난 내역이 자동으로 떠요</span></div>
@@ -280,10 +349,7 @@ async function render(){
 
   <div class="card">
     <div class="lbl"><span class="step">3</span>날짜 선택</div>
-    <div class="dates">
-      ${next14().map(d=>`<button class="tap ${sel.date===d.iso?'on':''} ${d.dow===0?'sun':''}" ${d.closed?'disabled':''} onclick="pick('date','${d.iso}')">
-        <div class="dow">${d.dow===new Date().getDay()&&d.iso===dateISO(new Date())?'오늘':DOW[d.dow]}</div><div class="day">${d.day}</div></button>`).join('')}
-    </div>
+    ${calHTML(busyMonth)}
   </div>
 
   <div class="card">
@@ -294,9 +360,33 @@ async function render(){
   <div class="card">
     <div class="lbl"><span class="step">5</span>추가 정보</div>
     ${shopQuestions().map((q,i)=>qField(q,i)).join('')}
+    <div class="fld">
+      <div class="t">원하는 디자인 사진 <span class="opt">(선택 · 최대 3장)</span></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        ${sel.photos.map((p,i)=>`<div style="position:relative">
+          <img src="${p}" style="width:64px;height:64px;border-radius:10px;object-fit:cover;display:block" onclick="showImg(this.src)">
+          <button class="tap" style="position:absolute;top:-7px;right:-7px;width:21px;height:21px;border-radius:11px;background:#1F2024;color:#fff;font-size:12px;line-height:1" onclick="rmPhoto(${i})">×</button>
+        </div>`).join('')}
+        ${sel.photos.length<3?`<button class="tap" style="width:64px;height:64px;border-radius:10px;border:1.5px dashed #C5C6CC;color:#8F9098;font-size:10.5px;font-weight:600;line-height:1.5" onclick="addPhoto()">📷<br>추가</button>`:''}
+      </div>
+      <div style="font-size:10.5px;color:#8F9098;margin-top:6px">원하는 디자인·사진을 올려주시면 사장님이 보고 가능 여부를 확인해요.</div>
+    </div>
+    ${(CFG.coupons&&CFG.coupons.length)?`<div class="fld" style="margin-bottom:0">
+      <div class="t">쿠폰 코드 <span class="opt">(선택)</span></div>
+      <input id="cpIn" placeholder="쿠폰 코드가 있다면 입력해주세요" value="${esc(sel.couponCode||'')}" oninput="sel.couponCode=this.value;updCp()" style="text-transform:uppercase">
+      <div id="cpMsg">${cpMsgHTML()}</div>
+    </div>`:''}
   </div>
 
   ${CFG.deposit?`<div class="deposit"><b>💳 예약금 안내</b><br>${esc(CFG.deposit).replace(/\n/g,'<br>')}</div>`:''}
+
+  ${CFG.mustRead?`<div class="mustread">
+    <div class="mr-t">⚠️ 예약 전 꼭 읽어주세요</div>
+    <div class="mr-b">${esc(CFG.mustRead).replace(/\n/g,'<br>')}</div>
+    <button class="tap mr-agree ${sel.agree?'on':''}" onclick="sel.agree=!sel.agree;render()">
+      <span class="cb">${sel.agree?'✓':''}</span> 네, 확인했고 동의합니다
+    </button>
+  </div>`:''}
 
   <button class="cta tap" onclick="submitBooking()">예약 요청하기</button>
   <div class="note">요청 후 원장님이 확인하면 <b>문자로 확정 안내</b>를 드려요.<br>확정 전까지는 예약이 완료된 것이 아니에요.</div>`;
@@ -308,6 +398,35 @@ function showImg(src){ // 사진 크게 보기
   el.onclick=()=>el.remove();
   document.body.appendChild(el);
 }
+function addPhoto(){ // 원하는 디자인 사진 — 자동 축소 후 첨부
+  const inp=document.createElement('input'); inp.type='file'; inp.accept='image/*';
+  inp.onchange=()=>{
+    const f=inp.files[0]; if(!f) return;
+    const img=new Image();
+    img.onload=()=>{
+      const M=512, r=Math.min(1,M/Math.max(img.width,img.height));
+      const c=document.createElement('canvas'); c.width=Math.round(img.width*r); c.height=Math.round(img.height*r);
+      c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+      if(sel.photos.length<3) sel.photos.push(c.toDataURL('image/jpeg',.82));
+      URL.revokeObjectURL(img.src); render();
+    };
+    img.src=URL.createObjectURL(f);
+  };
+  inp.click();
+}
+function rmPhoto(i){ sel.photos.splice(i,1); render(); }
+function findCoupon(){
+  const code=(sel.couponCode||'').trim().toUpperCase().replace(/\s/g,'');
+  if(!code) return null;
+  return (CFG.coupons||[]).find(c=>String(c.code||'').toUpperCase()===code)||null;
+}
+function cpMsgHTML(){
+  if(!(sel.couponCode||'').trim()) return '';
+  const c=findCoupon();
+  return c?`<div style="font-size:12px;font-weight:700;color:#298267;margin-top:6px">✅ ${esc(c.label)}${c.amount?` — ${c.amount.toLocaleString('ko-KR')}원 할인`:''} 적용!</div>`
+    :`<div style="font-size:12px;color:#8F9098;margin-top:6px">일치하는 쿠폰이 없어요 — 코드를 확인해주세요</div>`;
+}
+function updCp(){ const el=document.getElementById('cpMsg'); if(el) el.innerHTML=cpMsgHTML(); } // 입력 중 전체 재렌더 금지
 function pickCat(c){ sel.cat=c; sel.menu=null; sel.time=null; render(); }
 function pickMenu(cat,i){ sel.menu=menusOf(cat)[i]; sel.time=null; render(); }
 function pick(k,v){ sel[k]=v; if(k==='date') sel.time=null; render(); }
@@ -318,6 +437,11 @@ async function submitBooking(){
   if(phone.replace(/[^\d]/g,'').length<10){ alert('연락처를 정확히 입력해주세요'); return; }
   if(!sel.menu){ alert('시술을 선택해주세요'); return; }
   if(!sel.date||!sel.time){ alert('날짜와 시간을 선택해주세요'); return; }
+  if(CFG.mustRead&&!sel.agree){
+    alert('필독사항을 읽고 "동의합니다"에 체크해주세요');
+    const el=document.querySelector('.mustread'); if(el) el.scrollIntoView({behavior:'smooth',block:'center'});
+    return;
+  }
   const qs=shopQuestions();
   for(let i=0;i<qs.length;i++){ // 필수 질문 검사
     if(qs[i].required&&!String(sel.answers[i]||'').trim()){ alert(`"${qs[i].label}"에 답해주세요`); return; }
@@ -327,13 +451,17 @@ async function submitBooking(){
   const dur=sel.menu.min||60;
   const end=toHM(toMin(sel.time)+dur);
   const btn=document.querySelector('.cta'); btn.disabled=true; btn.textContent='요청 중…';
+  const cpn=findCoupon();
   const row={
     shop_id:SLUG, name, phone, cat:sel.menu.cat||sel.cat, menu:sel.menu.name,
     duration_min:dur, date:sel.date, start_time:sel.time, end_time:end,
-    note, answers, staff:sel.staff||'', status:'pending', source:'link'
+    note, answers, staff:sel.staff||'', status:'pending', source:'link',
+    photos:sel.photos, coupon:cpn?`${cpn.label}(${cpn.code}${cpn.amount?` · ${cpn.amount.toLocaleString('ko-KR')}원 할인`:''})`:''
   };
   let {error}=await sb.from('bookings').insert(row);
-  if(error&&String(error.message||'').includes('staff')){ delete row.staff; ({error}=await sb.from('bookings').insert(row)); }
+  for(const col of ['photos','coupon','staff']){ // 옛 서버(컬럼 없음)면 그 항목만 빼고 재시도
+    if(error&&String(error.message||'').includes(col)){ delete row[col]; ({error}=await sb.from('bookings').insert(row)); }
+  }
   if(error){ btn.disabled=false; btn.textContent='예약 요청하기'; alert('요청에 실패했어요. 잠시 후 다시 시도해주세요.'); return; }
   $('#app').innerHTML=`
   <div class="done">
@@ -343,7 +471,7 @@ async function submitBooking(){
     <div class="box">
       📅 <b>${fmtK(sel.date)} ${sel.time}</b><br>
       💅 ${esc(sel.menu.name)} (${fmtMin(dur)})${sel.staff?`<br>👤 ${esc(sel.staff)} 선생님 지명`:''}<br>
-      👤 ${esc(name)}
+      👤 ${esc(name)}${sel.photos.length?`<br>📷 디자인 사진 ${sel.photos.length}장 첨부`:''}${cpn?`<br>🎟️ ${esc(cpn.label)} 적용`:''}
       ${CFG.deposit?`<div style="margin-top:10px;padding-top:10px;border-top:1px solid #F8F9FE;font-size:12.5px;color:#71727A">${esc(CFG.deposit).replace(/\n/g,'<br>')}</div>`:''}
     </div>
   </div>`;
