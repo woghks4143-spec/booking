@@ -7,7 +7,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-body{background:#F8F9FE;font-family:Inter,'Pretendard Variable',Pretendard,-apple-system,'Malgun Gothic',system-ui,sans-serif;color:#1F2024;min-height:100vh}
+body{background:#F8F9FE;font-family:Inter,'Pretendard Variable',Pretendard,-apple-system,'Malgun Gothic',system-ui,sans-serif;color:#1F2024;min-height:100vh;word-break:keep-all;overflow-wrap:break-word}
 button{font:inherit;border:none;background:none;cursor:pointer;color:inherit}
 input,textarea{font:inherit;outline:none}
 .wrap{max-width:480px;margin:0 auto;padding:0 20px 40px}
@@ -15,7 +15,7 @@ input,textarea{font:inherit;outline:none}
 .hd .shop{font-size:24px;font-weight:800;letter-spacing:.01em}
 .hd .sub{font-size:13px;color:#71727A;margin-top:6px;line-height:1.5}
 .card{background:#fff;border-radius:16px;padding:18px;margin-bottom:14px}
-.lbl{font-size:13px;font-weight:700;color:#1F2024;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.lbl{font-size:13px;font-weight:700;color:#1F2024;margin-bottom:10px;display:flex;align-items:center;flex-wrap:wrap;gap:2px 6px}
 .lbl .step{width:20px;height:20px;border-radius:10px;background:#006FFD;color:#fff;font-size:11px;font-weight:800;display:inline-flex;align-items:center;justify-content:center}
 .cats{display:flex;gap:8px;margin-bottom:10px}
 .cats button{font-size:13px;font-weight:600;color:#71727A;border:1px solid #C5C6CC;border-radius:99px;padding:7px 14px;background:#fff}
@@ -124,6 +124,7 @@ const fmtK=iso=>{const d=new Date(iso+'T00:00:00');return `${d.getMonth()+1}월 
 
 const SLUG=new URLSearchParams(location.search).get('s')||'suhvprg'; // 가게 구분 (기본 = 핀더)
 let sb=null, CFG=null, TEAM=[]; // TEAM: 선생님 프로필 목록
+const isOrder=()=>CFG&&CFG.mode==='order'; // mode 미설정(옛 샵)은 예약 모드로 취급
 let sel={cat:null,menu:null,date:null,time:null,answers:{},staff:'',name:'',phone:'',lookup:undefined,photos:[],couponSel:null,usedCoupons:[],agree:false};
 let busyCache={}; // date -> [[startMin,endMin]]
 let bcalYM=dateISO(new Date()).slice(0,7); // 달력에 보이는 달
@@ -319,7 +320,7 @@ async function render(){
   <div class="hd">
     ${CFG.logo?`<img src="${CFG.logo}" style="width:72px;height:72px;border-radius:50%;object-fit:cover;margin:0 auto 10px;display:block;box-shadow:0 4px 14px rgba(0,0,0,.1)">`:''}
     <div class="shop">${esc(CFG.name||'샵')}</div>
-    <div class="sub">${esc(CFG.notice||'원하시는 시간을 선택해 예약을 요청해주세요.')}</div>
+    <div class="sub">${esc(CFG.notice||(isOrder()?'원하시는 날짜·시간을 선택해 주문을 요청해주세요.':'원하시는 시간을 선택해 예약을 요청해주세요.'))}</div>
   </div>
 
   ${CFG.announce?`<div class="announce"><b>📢 공지사항</b><br>${esc(CFG.announce).replace(/\n/g,'<br>')}</div>`:''}
@@ -355,7 +356,7 @@ async function render(){
     <div id="cpArea">${couponListHTML()}</div>
   </div>`:''}
 
-  ${(CFG.staff&&CFG.staff.length>1)?`<div class="card">
+  ${(CFG.staff&&CFG.staff.length>1&&!isOrder())?`<div class="card">
     <div class="lbl">👤 담당 선생님 <span style="font-size:11px;font-weight:400;color:#8F9098">(선택)</span></div>
     ${TEAM.length>1&&TEAM.some(t=>t.photo||t.intro)?`
     <div style="display:flex;flex-direction:column;gap:8px">
@@ -363,15 +364,21 @@ async function render(){
         <div style="width:44px;height:44px;border-radius:22px;background:#E8E9F1;display:flex;align-items:center;justify-content:center;font-size:18px;flex:none">✨</div>
         <div style="font-size:13.5px;font-weight:700;color:${!sel.staff?'#006FFD':'#1F2024'}">아무나 괜찮아요</div>
       </button>
-      ${TEAM.map(t=>{const on=sel.staff===t.name;return `<button class="tap" style="display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:12px;border:1.5px solid ${on?'#006FFD':'transparent'};background:${on?'#EAF2FF':'#F8F9FE'};text-align:left" onclick="sel.staff='${esc(t.name).replace(/'/g,"\\'")}';render()">
-        ${t.photo?`<img src="${t.photo}" style="width:44px;height:44px;border-radius:22px;object-fit:cover;flex:none">`:`<div style="width:44px;height:44px;border-radius:22px;background:#EAF2FF;color:#006FFD;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;flex:none">${esc(t.name[0])}</div>`}
-        <div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:700;color:${on?'#006FFD':'#1F2024'}">${esc(t.name)}${t.role==='owner'?' <span style="font-size:10px">👑</span>':''}</div>
-        ${t.intro?`<div style="font-size:11px;color:#71727A;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(t.intro)}</div>`:''}</div>
-      </button>`;}).join('')}
+      ${TEAM.map(t=>{
+  const on=sel.staff===t.name;
+  const off=sel.date&&((CFG.staffOff&&CFG.staffOff[t.name])||[]).includes(sel.date);
+  return `<button class="tap" ${off?'disabled':''} style="display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:12px;border:1.5px solid ${on?'#006FFD':'transparent'};background:${on?'#EAF2FF':'#F8F9FE'};text-align:left;opacity:${off?'.45':'1'}" onclick="${off?'':`sel.staff='${esc(t.name).replace(/'/g,"\\'")}';render()`}">
+    ${t.photo?`<img src="${t.photo}" style="width:44px;height:44px;border-radius:22px;object-fit:cover;flex:none">`:`<div style="width:44px;height:44px;border-radius:22px;background:#EAF2FF;color:#006FFD;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;flex:none">${esc(t.name[0])}</div>`}
+    <div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:700;color:${on?'#006FFD':'#1F2024'}">${esc(t.name)}${t.role==='owner'?' <span style="font-size:10px">👑</span>':''}${off?` <span style="font-size:9px;font-weight:700;color:#ED3241;background:#FFE2E5;border-radius:99px;padding:1px 6px">이 날 오프</span>`:''}</div>
+    ${t.intro?`<div style="font-size:11px;color:#71727A;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(t.intro)}</div>`:''}</div>
+  </button>`;}).join('')}
     </div>`
     :`<div class="qopts">
       <button class="tap ${!sel.staff?'on':''}" onclick="sel.staff='';render()">아무나 괜찮아요</button>
-      ${CFG.staff.map(s=>`<button class="tap ${sel.staff===s?'on':''}" onclick="sel.staff='${esc(s).replace(/'/g,"\\'")}';render()">${esc(s)}</button>`).join('')}
+      ${CFG.staff.map(s=>{
+  const off=sel.date&&((CFG.staffOff&&CFG.staffOff[s])||[]).includes(sel.date);
+  return `<button class="tap ${sel.staff===s?'on':''}" ${off?'disabled style="opacity:.45"':''} onclick="${off?'':`sel.staff='${esc(s).replace(/'/g,"\\'")}';render()`}">${esc(s)}${off?' · 오프':''}</button>`;
+}).join('')}
     </div>`}
   </div>`:''}
 
@@ -381,7 +388,7 @@ async function render(){
   </div>
 
   <div class="card">
-    <div class="lbl"><span class="step">4</span>시간 선택</div>
+    <div class="lbl"><span class="step">4</span>${isOrder()?'픽업 시간':'시간 선택'}</div>
     ${slotsHTML}
   </div>
 
@@ -411,8 +418,10 @@ async function render(){
     </button>
   </div>`:''}
 
-  <button class="cta tap" onclick="submitBooking()">예약 요청하기</button>
-  <div class="note">요청 후 원장님이 확인하면 <b>문자로 확정 안내</b>를 드려요.<br>확정 전까지는 예약이 완료된 것이 아니에요.</div>`;
+  <button class="cta tap" onclick="submitBooking()">${isOrder()?'주문 요청하기':'예약 요청하기'}</button>
+  <div class="note">${isOrder()
+    ?'요청 후 사장님이 확인하면 <b>문자로 확정 안내</b>를 드려요.<br>확정 전까지는 주문이 완료된 것이 아니에요.'
+    :'요청 후 원장님이 확인하면 <b>문자로 확정 안내</b>를 드려요.<br>확정 전까지는 예약이 완료된 것이 아니에요.'}</div>`;
 }
 
 function showImg(src){ // 사진 크게 보기
@@ -469,7 +478,16 @@ function updCpArea(){
 }
 function pickCat(c){ sel.cat=c; sel.menu=null; sel.time=null; render(); }
 function pickMenu(cat,i){ sel.menu=menusOf(cat)[i]; sel.time=null; render(); }
-function pick(k,v){ sel[k]=v; if(k==='date') sel.time=null; render(); }
+function pick(k,v){
+  sel[k]=v;
+  if(k==='date'){
+    sel.time=null;
+    if(sel.staff&&((CFG.staffOff&&CFG.staffOff[sel.staff])||[]).includes(v)){
+      sel.staff=''; // 그 날 오프면 지명 자동 해제 — 배지로 안내됨
+    }
+  }
+  render();
+}
 
 async function submitBooking(){
   const name=(sel.name||'').trim(), phone=(sel.phone||'').trim();
@@ -491,6 +509,13 @@ async function submitBooking(){
   const dur=sel.menu.min||60;
   const end=toHM(toMin(sel.time)+dur);
   const btn=document.querySelector('.cta'); btn.disabled=true; btn.textContent='요청 중…';
+  // 페이지를 열어둔 사이 다른 손님이 먼저 잡았을 수 있으니 보내기 직전에 한 번 더 확인
+  delete busyCache[sel.date];
+  const fresh=await getBusy(sel.date);
+  if(!freeSlots(sel.date,dur,fresh).includes(toMin(sel.time))){
+    alert('방금 이 시간이 마감됐어요 🙏 다른 시간을 선택해주세요.');
+    sel.time=null; mbCache={}; render(); return;
+  }
   const cpn=findCoupon();
   if(cpn&&cpn.once){ // 1인 1회 쿠폰 — 제출 직전 최종 확인
     try{
@@ -512,12 +537,12 @@ async function submitBooking(){
   for(const col of ['photos','coupon','staff']){ // 옛 서버(컬럼 없음)면 그 항목만 빼고 재시도
     if(error&&String(error.message||'').includes(col)){ delete row[col]; ({error}=await sb.from('bookings').insert(row)); }
   }
-  if(error){ btn.disabled=false; btn.textContent='예약 요청하기'; alert('요청에 실패했어요. 잠시 후 다시 시도해주세요.'); return; }
+  if(error){ btn.disabled=false; btn.textContent=isOrder()?'주문 요청하기':'예약 요청하기'; alert('요청에 실패했어요. 잠시 후 다시 시도해주세요.'); return; }
   $('#app').innerHTML=`
   <div class="done">
     <div class="ic"><svg width="34" height="34" viewBox="0 0 32 32" fill="none" stroke="#298267" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17l6 6L25 11"/></svg></div>
-    <h2>예약 요청 완료!</h2>
-    <p>원장님이 확인하는 대로<br><b>문자로 확정 안내</b>를 드릴게요.</p>
+    <h2>${isOrder()?'주문 요청 완료!':'예약 요청 완료!'}</h2>
+    <p>${isOrder()?'사장님':'원장님'}이 확인하는 대로<br><b>문자로 확정 안내</b>를 드릴게요.</p>
     <div class="box">
       📅 <b>${fmtK(sel.date)} ${sel.time}</b><br>
       💅 ${esc(sel.menu.name)} (${fmtMin(dur)})${sel.staff?`<br>👤 ${esc(sel.staff)} 선생님 지명`:''}<br>
